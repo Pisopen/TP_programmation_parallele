@@ -1,0 +1,97 @@
+/* Include pour gérer une file de message */
+#include <sys/types.h>
+#include <sys/ipc.h> 
+#include <sys/msg.h> 
+/* Include pour le printf */
+#include <stdio.h>
+/* Include pour la commande exit */
+#include <stdlib.h>
+#include <unistd.h>
+
+key_t k;
+int msqid,ret; /* identifiant de la file de messages */
+struct msqid_ds buf;
+struct msgbuff
+{
+ long mtype;                        //type de message
+ char mtext[11]; 
+}msg_buff;
+int i;
+int bOuver;
+
+main ()
+{
+  /* Récupération d'une clef unique */
+  k=ftok("msg", 0); /* J'utilise le nom du fichier exécutable pour définir une clef unique */
+  if (k==-1)
+  {
+    printf( "erreur de creation de la cle IPC\n");
+    exit (0);
+  }
+  printf("%d",k);
+  
+  /* creation ou ouverture d'une file de messages */
+  printf ("Création d'une file de messages\n");
+  msqid = msgget (k , 0666 + IPC_CREAT + IPC_EXCL);
+  if (msqid == -1)
+  {
+    printf ("La file de message existe déjà, ouverture...\n");
+    msqid = msgget (k , 0666 + IPC_CREAT);
+    if (msqid == -1)
+    {
+      printf( "erreur de création ou d'ouverture de la file de messages \n");
+      exit(0);
+    }
+    else
+      bOuver = 1;
+  }
+  else
+    bOuver = 0;
+
+/* Mettre des messages dans la file de messages */
+  if (!bOuver)
+  {  
+    for (i=0; i<10; i++)
+    {
+      sprintf (msg_buff.mtext, "Message %d", i); 
+      msg_buff.mtype = 1;
+      msgsnd(msqid,&msg_buff,sizeof (msg_buff.mtext),IPC_NOWAIT); 
+    }
+    printf ("10 messages envoyés.\n");
+  }
+
+/* Lecture de l'état de la file des messages */
+  msgctl(msqid, IPC_STAT, &buf);
+  printf ("\nID utilisateur = %d\n", buf.msg_perm.uid);
+  printf ("ID du groupe = %d\n",  buf.msg_perm.gid);
+  printf ("Permissions = 0%o\n", buf.msg_perm.mode);
+  printf ("Nombre maximum d'octets autorisés dans la file = %d\n", buf.msg_qbytes);
+  printf ("Nombre de messages actuellement dans la file = %d\n", buf.msg_qnum);
+
+  if (bOuver)
+  {  
+    for (i=0; i<10; i++)
+    {
+      msgrcv(msqid,&msg_buff,sizeof (msg_buff.mtext),0, 0); // 0 pour le type, on récupère tous types de messages ...
+      printf (msg_buff.mtext); 
+      printf ("\n"); 
+    }
+  }
+  else
+  {
+    printf ("\nAttente de la récupération des messages...\n");
+    while (buf.msg_qnum != 0)
+    {
+      sleep (1); // Pose de 1 seconde
+      msgctl(msqid, IPC_STAT, &buf);
+    };
+      /* destruction de la file de message */
+    printf ("Messages récupérés, destruction de la file de messages\n");
+    ret = msgctl (msqid , IPC_RMID, (struct msqid_ds *) 0);
+    if (ret== -1)
+    {
+      printf(" erreur lors de la fermeture de la file de message : %d\n",msqid);
+      exit (0);
+    }
+  } 
+}
