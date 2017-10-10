@@ -17,14 +17,11 @@ typedef struct {
 pthread_t tProc[N];
 int msqid;
 long date_start;
-pthread_mutex_t mutex;
-pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
 key_t k;
+Msg* msg;
 
 void init_lock() {
-
-	pthread_mutex_init(&mutex, NULL);
-	k = ftok("key", 0);
+	k = ftok("projet", 0);
 	if (k == -1)
 	{
 		printf( "erreur de creation de la cle IPC\n");
@@ -47,77 +44,57 @@ void init_lock() {
 	printf("Id de la file de message: %d\n", msqid);
 }
 
+void envoyer_message(Msg* msg) {
+	msg->date = date_start++;
+	printf("Message envoyé du processus %ld au processus %ld à la date %ld\n", msg->id_em, msg->id_rec, msg->date);
+	msgsnd(msqid, msg, sizeof(msg), 0);
+}
+
+void demande_exclusion(Msg* msg) {
+	printf("Message pour: %ld de: %ld a la date: %ld\n", msg->id_rec, msg->id_em, msg->date );
+}
+
+void reponse_exclusion(Msg* msg) {
+	msg->date = date_start++;
+	msgsnd(msqid, msg, sizeof(msg), 0);
+}
+
+void attendre_message() {
+	long rec = msg->id_em;
+	msgctl(msqid, IPC_STAT, &buf);
+	for (int i = 0; i < buf.msg_qnum; ++i)
+	{
+		msgrcv(msqid, msg, sizeof(msg), 0, IPC_NOWAIT);
+		msg->date = date_start++;
+		if (msg->id_rec == rec)
+		{
+			demande_exclusion(msg);
+		}
+		else {
+			reponse_exclusion(msg);
+		}
+	}
+}
 
 static void * communication(void* argv) {
-	long em;
-	long rec;
-	char ans;
-
 	Msg* msg = (Msg*) argv;
-	printf("Proc: \n");
-	scanf("%ld", &em);
-	msg->id_em = em;
-
-	printf("Envoyer ou Recevoir (e ou r) \n");
-	printf("test1\n");
-	scanf("%c", &ans);
-	if (ans == 'e')
-	{
-		pthread_mutex_lock(&mutex);
-		pthread_cond_wait (&condition, &mutex);
-		printf("Proc pour message: \n");
-		scanf("%ld", &rec);
-		msg->id_rec = rec;
-		msg->date = date_start++;
-		printf("Message envoyé du processus %ld au processus %ld à la date %ld\n", msg->id_em, msg->id_rec, msg->date);
-		msgsnd(msqid, msg, sizeof(msg), 0);
-		pthread_mutex_unlock(&mutex);
-	}
-	else if (ans == 'r')
-	{
-		pthread_mutex_lock(&mutex);
-		pthread_cond_wait (&condition, &mutex);
-		msgctl(msqid, IPC_STAT, &buf);
-		for (int i = 0; i < buf.msg_qnum; ++i)
-		{
-			pthread_mutex_lock(&mutex);
-			pthread_cond_wait (&condition, &mutex);
-			msgrcv(msqid, msg, sizeof(msg), 0, IPC_NOWAIT);
-			msg->date = date_start++;
-			if (msg->id_rec == em)
-			{
-				pthread_mutex_lock(&mutex);
-				pthread_cond_wait (&condition, &mutex);
-				printf("Message pour:%ld de:%ld a la date:%ld\n", msg->id_rec, msg->id_em, msg->date );
-				pthread_mutex_unlock(&mutex);
-			}
-			else {
-				pthread_mutex_lock(&mutex);
-				pthread_cond_wait (&condition, &mutex);
-				msg->date = date_start++;
-				msgsnd(msqid, msg, sizeof(msg), 0);
-				pthread_mutex_unlock(&mutex);
-			}
-			pthread_mutex_unlock(&mutex);
-		}
-		pthread_mutex_unlock(&mutex);
-
-	}
-
+	envoyer_message(msg);
+	attendre_message();
 	return NULL;
 }
 
 int main() {
 	init_lock();
-	Msg* msg;
+
 
 	for (int i = 1; i <= N; i++) {
 		msg = malloc(sizeof(Msg));
+		printf("Proc src : ");
+		scanf("%ld", &msg->id_em);
+		printf("Proc dest : ");
+		scanf("%ld", &msg->id_rec);
 		pthread_create(&tProc[i], NULL, communication , (void*) msg);
 		pthread_join(tProc[i], NULL);
 	}
-	/*for (int i = 1; i <= N; i++) {
-		pthread_join(tProc[i], NULL);
-	}*/
 	return 0;
 }
